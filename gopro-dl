@@ -1,0 +1,91 @@
+#!/bin/bash
+
+# Functions
+
+downloadjson(){
+    curl -L -s -X GET "https://api.gopro.com/media/$@/download" \
+        -H 'Accept: application/vnd.gopro.jk.media+json; version=2.0.0' \
+        -H 'Accept-Language: en-US,en;q=0.5' \
+        --compressed \
+        -H 'Content-Type: application/json' \
+        -H 'Origin: https://gopro.com' \
+        -H 'Connection: keep-alive' \
+        -H 'Referer: https://gopro.com/' \
+        -H 'Sec-Fetch-Dest: empty' \
+        -H 'Sec-Fetch-Mode: cors' \
+        -H 'Sec-Fetch-Site: same-site' \
+        -H 'Sec-GPC: 1' \
+        -H 'Pragma: no-cache' \
+        -H 'Cache-Control: no-cache' \
+        -H 'TE: trailers' | jq -r '"\(.filename) \(._embedded.variations[0].url)"'
+}
+
+aria (){
+    aria2c -x16 -s16 -j16 -k1M --summary-interval=0 --console-log-level=error -o $@
+}
+
+getheader(){
+    grep -Po "(?<=https:\/\/gopro.com\/v\/).+(?=|\/)" <<< $@
+
+}
+
+getjson(){
+    curl -L -s -X GET "https://gopro.com/v/$@" | grep -Po "(?<=<script>window.__reflectData=).*(?=;<\/script>)"
+}
+
+folderName(){
+    jq -r '.collection.title' <<< $@ | sed "s/\W//g"
+}
+
+folderMedia(){
+    jq -r '.collectionMedia[].id' <<< $@
+}
+
+
+# Main code
+
+if [ "$1" != "" ]; then
+    header=$(getheader $1)
+else
+    echo "[!] Error: Invalid URL"
+    echo "[i] Usage: gopro-dl https://gopro.com/v/xxxxxxxxxxxxx"
+    exit
+fi
+
+
+echo "[*] Fetching collection."
+json=$(getjson $header)
+if [ "$json" = "" ]; then
+    echo "Error: Bad request."
+    exit
+fi
+
+dir=$(folderName $json)
+if [ "$dir" = "" ]; then
+    dir=$header
+fi
+
+file $dir >/dev/null
+if [ $? -ne 0 ]; then
+    echo "[*] Creating collection directory."
+    mkdir $dir 2>/dev/null
+    if [ $? -ne 0 ]; then
+        echo "[!] Error: could not create directory."
+        exit
+    fi
+fi
+
+echo "[*] Downloading media."
+cd $dir
+while read id; do
+    dl=$(downloadjson $id)
+
+    echo "[i] Downloading: $(awk '{print $1}' <<< $dl)."
+    echo "[i] Current folder size: $(du -h . | awk '{print $1}')."
+    echo "[i] Current number of files: $(ls -l | wc -l)."
+
+    aria $dl
+
+    sleep 1
+done <<< $(folderMedia $json)
+
