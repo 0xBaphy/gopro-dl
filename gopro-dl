@@ -65,8 +65,7 @@ if [ "$dir" = "" ]; then
     dir=$header
 fi
 
-file $dir >/dev/null
-if [ $? -ne 0 ]; then
+if [ ! -d "$dir" ]; then
     echo "[*] Creating collection directory."
     mkdir $dir 2>/dev/null
     if [ $? -ne 0 ]; then
